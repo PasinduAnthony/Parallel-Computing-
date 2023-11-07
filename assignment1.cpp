@@ -67,3 +67,10 @@ int main(int argc, char* argv[]) {
 
 // run
 // mpirun -np 1 assignment1
+
+
+//compile windows 
+//g++ -I"C:\Program Files (x86)\Microsoft MPI\SDK\Include" -o assignment1.exe assignment1.cpp "C:\Program Files (x86)\Microsoft MPI\SDK\Lib\x64\msmpi.lib"
+
+//run
+//"C:\Program Files\Microsoft MPI\Bin\mpiexec.exe" -np 3 assignment1.exe
