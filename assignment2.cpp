@@ -1,145 +1,108 @@
-#include "mpi.h"
 #include <iostream>
-#include <fstream>
-#include <string>
-#include <iomanip>
+#include <vector>
 #include <cstdlib>
 #include <ctime>
 #include <algorithm>
-#include <assert.h>
+#include <mpi.h>
 
-using namespace std;
+void printArray(const std::vector<int>& arr) {
+    for (const auto& num : arr) {
+        std::cout << num << " ";
+    }
+    std::cout << std::endl;
+}
 
-int main( int argc, char* argv[] )
-{
-    double starttime, endtime;
-    int proceso_id;
-    char processor_name[MPI_MAX_PROCESSOR_NAME];
-    int namelen;
-    int numprocsused;
-    // Intiating parallel part
-    MPI_Status stat;
-    MPI::Init();
-        /
-        MPI_Comm_size(MPI_COMM_WORLD, &numprocsused);
-        proceso_id = MPI::COMM_WORLD.Get_rank();
-        MPI_Get_processor_name(processor_name, &namelen);
-        unsigned int receivedElement;
-        if(proceso_id == 0) {
-            // if it is main process
-            // --- We are getting info from text file
-            int SIZE;
-            unsigned int value;
-            ifstream fd("testing_ingo.txt");
-            fd >> SIZE; // the first number on the first line is the number of numbers in file
-            unsigned int *array = new unsigned int [SIZE];
-            for(int c = 0 ; c < SIZE ; c++)  {
-                fd >> value;
-                array = value;
-            }
-            // --- DEBUG: in order to check if information was read properly
+int main(int argc, char* argv[]) {
+    MPI_Init(&argc, &argv);
 
-            // starting time calculation of the sort
-            starttime = MPI_Wtime();
-            // min and max values are got
-            unsigned int min = array[0];
-            unsigned int max = array[0];
-            for(int i=0; i < SIZE; i++) {
-                if(array[i] < min) { min = array[i]; }
-                if(array[i] > max) { max = array[i]; }
-            }
+    int world_rank, world_size;
 
-            // calculating how many numbers each bucket/process will get numbers
-            int *elementQtyArray = new int[numprocsused]; /
-            // default values
-            for(int d=1; d < numprocsused; d++) {
-                elementQtyArray[d] = 0;
-            }
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
-            for(int d=0; d < SIZE; d++) {
-                int increaseOf = max/(numprocsused-1);
-                int iteration = 1;
-                bool pridetas = false;
-                for(unsigned int j = increaseOf; j <= max; j = j + increaseOf) {
-                    if(array[d] <= j) {
-                        elementQtyArray[iteration]++;
-                        pridetas = true;
-                        break;
-                    }
-                    iteration++;
-                }
-                if (!pridetas) {
-                    elementQtyArray[iteration-1]++;
-                }
-            }
-            // Sending how many each process/bucket will get numbers
-            for(int i=1; i<numprocsused; i++) {
-                MPI_Send(&elementQtyArray[i], 1, MPI_INT, i, -2, MPI_COMM_WORLD);
-            }
-            // doing the same, this time sending the numbers
-            for(int d=0; d < SIZE; d++) {
-                int increaseOf = max/(numprocsused-1);
-                int iteration = 1;
-                bool issiunte = false;
-                for (unsigned int j = increaseOf; j <= max; j = j + increaseOf) {
-                    if(array[d] <= j) {
-                        MPI_Send(&array[d], 1, MPI_UNSIGNED, iteration, -4, MPI_COMM_WORLD);
-                        issiunte = true;
-                        break;
-                    }
-                    iteration++;
-                }
-                if (!issiunte) {
-                    MPI_Send(&array[d], 1, MPI_UNSIGNED, iteration-1, -4, MPI_COMM_WORLD);
-                }
-            }
-            // Getting back results and adding them to one array
-            int lastIndex = 0; int indexi = 0;
-            for(int i=1; i < numprocsused; i++) {
-                unsigned int * recvArray = new unsigned int [elementQtyArray[i]];
-                MPI_Recv(&recvArray[0], elementQtyArray[i], MPI_UNSIGNED, i, 1000, MPI_COMM_WORLD, &stat);
-                if(lastIndex == 0) {
-                    lastIndex = elementQtyArray[i];
-                }
-                for(int j=0; j<elementQtyArray[i]; j++) {
-                    array[indexi] = recvArray[j];
-                    indexi++;
-                }
-            }
- 
-            // stoping the time
-            endtime   = MPI_Wtime();
-            // showing results in file
-            ofstream fr("results.txt");
-            for(int c = 0 ; c < SIZE ; c++)  {
-                fr << array << endl;
-            }
-            fr.close();
-            // sorting results
-            printf("it took %f seconds \n", endtime-starttime);
-            printf("Numbers: %d \n", SIZE);
-            printf("Processes:  %d \n", numprocsused);
+    double start_time, end_time;
 
-	//----------------------------------------------------------------------------------------------------------------
-        } else {
-            // if child process
-            int elementQtyUsed; // kiek elementu si gija gauja is tevinio proceso
-            // --- getting the number of numbers in the bucket
-            MPI_Recv(&elementQtyUsed, 1, MPI_INT, 0, -2, MPI_COMM_WORLD, &stat);
-
-            unsigned int *localArray = new unsigned int [elementQtyUsed]; // initiating a local bucket
-
-            // --- getting numbers from the main process
-            for(int li = 0; li < elementQtyUsed; li++) {
-                MPI_Recv(&receivedElement, 1, MPI_UNSIGNED, 0, -4, MPI_COMM_WORLD, &stat);
-                localArray[li] =  receivedElement;
-            }
-            // --- sorting the bucket
-            sort(localArray, localArray+elementQtyUsed);
-
-            // --- sending back sorted array
-            MPI_Send(localArray, elementQtyUsed, MPI_UNSIGNED, 0, 1000, MPI_COMM_WORLD);
+    // Master process initializes the array
+    if (world_rank == 0) {
+        // Get the size of the array from the command line
+        if (argc != 2) {
+            std::cerr << "Usage: " << argv[0] << " <array_size>" << std::endl;
+            MPI_Abort(MPI_COMM_WORLD, 1);
         }
-    MPI::Finalize();
+
+        int array_size = std::atoi(argv[1]);
+        std::vector<int> data(array_size);
+
+        // Populate the array with random numbers
+        srand(static_cast<unsigned>(time(nullptr)));
+        for (int i = 0; i < array_size; ++i) {
+            data[i] = rand() % 100;  // Adjust the range as needed
+        }
+
+        // Print the unsorted array
+        std::cout << "Unsorted Array (Master): ";
+        printArray(data);
+
+        // Record start time
+        start_time = MPI_Wtime();
+
+        // Partition the array and send to slave processes
+        int chunk_size = array_size / world_size;
+        for (int i = 1; i < world_size; ++i) {
+            MPI_Send(&data[i * chunk_size], chunk_size, MPI_INT, i, 0, MPI_COMM_WORLD);
+        }
+
+        data.resize(chunk_size); // Resize the master's array
+
+        // Gather sorted large buckets from slave processes
+        std::vector<int> recvcounts(world_size);
+        std::vector<int> displs(world_size);
+
+        MPI_Gather(&chunk_size, 1, MPI_INT, &recvcounts[0], 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+        int total_size = 0;
+        if (world_rank == 0) {
+            displs[0] = 0;
+            total_size = recvcounts[0];
+            for (int i = 1; i < world_size; ++i) {
+                displs[i] = displs[i - 1] + recvcounts[i - 1];
+                total_size += recvcounts[i];
+            }
+        }
+
+        std::vector<int> sorted_data(total_size);
+        MPI_Gatherv(nullptr, 0, MPI_INT, &sorted_data[0], &recvcounts[0], &displs[0], MPI_INT, 0, MPI_COMM_WORLD);
+
+        // Record end time
+        end_time = MPI_Wtime();
+
+        // Perform final sorting and output the sorted array
+        std::sort(sorted_data.begin(), sorted_data.end());
+        std::cout << "Sorted Array (Master): ";
+        printArray(sorted_data);
+
+        // Print execution time
+        std::cout << "Execution Time: " << end_time - start_time << " seconds" << std::endl;
+
+    } else {
+        // Slave processes receive partition and perform bucket sort
+        int chunk_size;
+        MPI_Status status;
+
+        MPI_Probe(0, 0, MPI_COMM_WORLD, &status);
+        MPI_Get_count(&status, MPI_INT, &chunk_size);
+
+        std::vector<int> local_data(chunk_size);
+        MPI_Recv(&local_data[0], chunk_size, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        // Perform bucket sort on the local data
+        std::sort(local_data.begin(), local_data.end());
+
+        // Send the local sorted data to the master
+        MPI_Gather(&chunk_size, 1, MPI_INT, nullptr, 0, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Gatherv(&local_data[0], chunk_size, MPI_INT, nullptr, nullptr, nullptr, MPI_INT, 0, MPI_COMM_WORLD);
+    }
+
+    MPI_Finalize();
     return 0;
 }
